@@ -1,0 +1,30 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["type: bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (and request) that trigger the problem.
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config (redact secrets)
+      render: yaml
+  - type: input
+    id: version
+    attributes:
+      label: Marengo version / commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

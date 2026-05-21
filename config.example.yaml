@@ -1,0 +1,25 @@
+# Marengo example configuration.
+# NOTE: this is the target shape for v0.1 — the validated schema lands in issue #2.
+
+listen:
+  proxy: ":8080" # public reverse-proxy listener
+  admin: "127.0.0.1:9090" # /health, /stats, /purge (keep this private)
+  metrics: "127.0.0.1:9091" # Prometheus /metrics (keep this private)
+
+cache:
+  max_size_mb: 512 # in-memory LRU budget
+
+origins:
+  - host: blog.example.com # match incoming requests by Host header
+    upstream: http://localhost:3000 # where to forward on a miss
+    rules:
+      - path: /api/* # most-specific match wins
+        ttl: 60s
+      - path: /assets/*
+        ttl: 7d
+      - path: /*
+        ttl: 1h
+
+logging:
+  level: info # trace | debug | info | warn | error
+  format: json # json | pretty

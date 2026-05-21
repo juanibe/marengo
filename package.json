@@ -1,0 +1,63 @@
+{
+  "name": "marengo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A self-hosted HTTP cache & mini-CDN — a thoughtful caching reverse proxy for your homelab.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Juan Ignacio Benito (@juanibe)",
+  "homepage": "https://github.com/juanibe/marengo#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanibe/marengo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/juanibe/marengo/issues"
+  },
+  "keywords": [
+    "cache",
+    "http-cache",
+    "reverse-proxy",
+    "cdn",
+    "self-hosted",
+    "rfc9111",
+    "varnish"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "marengo": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,jsonc}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
+    "@types/node": "^25.9.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}
