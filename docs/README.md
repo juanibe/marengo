@@ -17,3 +17,4 @@ Design and HTTP-flavoured concepts as they show up in Marengo's code.
 
 - [Reverse proxy: the two halves](./concepts/reverse-proxy-two-halves.md) — server + client, streaming, connection pooling, routing by Host.
 - [Hop-by-hop vs end-to-end headers](./concepts/hop-by-hop-headers.md) — the RFC distinction, the `Connection` header's superpower, and `Via` / `X-Forwarded-*`.
+- [HTTP request smuggling](./concepts/http-request-smuggling.md) — the real-world attack class hop-by-hop discipline defends against, with a worked TE.CL example.
