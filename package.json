@@ -59,5 +59,9 @@
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   }
 }
