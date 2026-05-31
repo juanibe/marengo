@@ -42,7 +42,8 @@ import {
 import { type CompiledRule, matchRule } from "./cache/rules.ts";
 import type { Store, StoredEntry } from "./cache/store.ts";
 import type { Config } from "./config/schema.ts";
-import { fetchFromOrigin } from "./proxy.ts";
+import type { Metrics } from "./metrics.ts";
+import { fetchFromOrigin, type OriginFetchResult } from "./proxy.ts";
 
 export interface PipelineDeps {
   config: Config;
@@ -50,6 +51,7 @@ export interface PipelineDeps {
   /** Pre-compiled per-host rule matchers, keyed by lowercased Host header. */
   compiledOrigins: Map<string, CompiledRule[]>;
   logger: Logger;
+  metrics: Metrics;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +97,7 @@ export async function handleRequest(
 export function createCacheServer(deps: PipelineDeps): Server {
   return createHttpServer((req, res) => {
     const start = Date.now();
-    res.on("finish", () => logRequestComplete(deps.logger, req, res, start));
+    res.on("finish", () => onRequestComplete(deps, req, res, start));
 
     void handleRequest(req, res, deps).catch((err) => {
       deps.logger.error(
@@ -110,29 +112,51 @@ export function createCacheServer(deps: PipelineDeps): Server {
   });
 }
 
-function logRequestComplete(
-  logger: Logger,
+function onRequestComplete(
+  deps: PipelineDeps,
   req: IncomingMessage,
   res: ServerResponse,
   startedAt: number,
 ): void {
+  const durationMs = Date.now() - startedAt;
+  const cache = String(res.getHeader("x-cache") ?? "OFF");
   const contentLength = res.getHeader("content-length");
   const bytes =
     typeof contentLength === "string" || typeof contentLength === "number"
       ? Number(contentLength)
       : undefined;
-  logger.info(
+
+  deps.logger.info(
     {
       method: req.method,
       host: req.headers.host,
       path: req.url,
       status: res.statusCode,
-      cache: res.getHeader("x-cache") ?? "OFF",
+      cache,
       bytes,
-      duration_ms: Date.now() - startedAt,
+      duration_ms: durationMs,
     },
     "request",
   );
+
+  deps.metrics.recordRequest(
+    {
+      cache: cache.toLowerCase(),
+      method: req.method ?? "GET",
+      status: res.statusCode ?? 0,
+    },
+    durationMs,
+  );
+}
+
+/** Fetch wrapper that bumps the origin-error counter on network failures. */
+async function fetchOrThrow(req: IncomingMessage, deps: PipelineDeps): Promise<OriginFetchResult> {
+  try {
+    return await fetchFromOrigin(req, deps.config);
+  } catch (err) {
+    deps.metrics.recordOriginError();
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +168,7 @@ async function passThroughToOrigin(
   res: ServerResponse,
   deps: PipelineDeps,
 ): Promise<void> {
-  const result = await fetchFromOrigin(req, deps.config);
+  const result = await fetchOrThrow(req, deps);
   if (result.kind === "no-origin") {
     res.writeHead(421, { "content-type": "text/plain" });
     res.end("Misdirected Request\n");
@@ -162,7 +186,7 @@ async function fetchAndMaybeStore(
   wasStale: boolean,
 ): Promise<void> {
   const requestTime = Date.now();
-  const result = await fetchFromOrigin(req, deps.config);
+  const result = await fetchOrThrow(req, deps);
   const responseTime = Date.now();
 
   if (result.kind === "no-origin") {
