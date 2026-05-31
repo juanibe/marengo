@@ -10,6 +10,7 @@
  */
 
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
+import type { Readable } from "node:stream";
 import { type Dispatcher, Pool } from "undici";
 import type { Config } from "./config/schema.ts";
 
@@ -123,17 +124,33 @@ export async function closeAllPools(): Promise<void> {
 
 const METHODS_WITHOUT_BODY = new Set(["GET", "HEAD", "OPTIONS", "DELETE"]);
 
-export async function proxyToOrigin(
+/**
+ * Result of asking the origin for a response, with all proxy-side header
+ * surgery already applied. The caller decides what to do with the body —
+ * the pipeline either buffers it (to store) or pipes it through.
+ */
+export type OriginFetchResult =
+  | { kind: "no-origin" }
+  | {
+      kind: "response";
+      statusCode: number;
+      headers: MutableHeaders;
+      body: Readable;
+    };
+
+/**
+ * Forward the incoming request to the matching origin and return its response.
+ *
+ * Unlike `proxyToOrigin`, this does NOT write to the client — it just returns
+ * the (already-cleaned) upstream response so the caller can decide whether to
+ * buffer-and-store, pipe-through, or both. Used by the cache pipeline (#12).
+ */
+export async function fetchFromOrigin(
   req: IncomingMessage,
-  res: ServerResponse,
   config: Config,
-): Promise<void> {
+): Promise<OriginFetchResult> {
   const origin = findOrigin(config, req.headers.host);
-  if (!origin) {
-    res.writeHead(421, { "content-type": "text/plain" });
-    res.end("Misdirected Request\n");
-    return;
-  }
+  if (!origin) return { kind: "no-origin" };
 
   const headers = stripHopByHop(req.headers as IncomingHttpHeaders);
   addVia(headers);
@@ -154,6 +171,30 @@ export async function proxyToOrigin(
   );
   addVia(responseHeaders);
 
-  res.writeHead(upstream.statusCode, responseHeaders);
-  upstream.body.pipe(res);
+  return {
+    kind: "response",
+    statusCode: upstream.statusCode,
+    headers: responseHeaders,
+    body: upstream.body as unknown as Readable,
+  };
+}
+
+/**
+ * The cache-less pass-through path: fetch from the origin and pipe the
+ * response straight back to the client. Used directly by `createProxyServer`
+ * and indirectly by the pipeline for non-cacheable methods.
+ */
+export async function proxyToOrigin(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: Config,
+): Promise<void> {
+  const result = await fetchFromOrigin(req, config);
+  if (result.kind === "no-origin") {
+    res.writeHead(421, { "content-type": "text/plain" });
+    res.end("Misdirected Request\n");
+    return;
+  }
+  res.writeHead(result.statusCode, result.headers);
+  result.body.pipe(res);
 }
