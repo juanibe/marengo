@@ -18,6 +18,7 @@ import { type CompiledRule, compileRules } from "./cache/rules.ts";
 import { MemoryStore } from "./cache/store.ts";
 import { ConfigError, loadConfig } from "./config/load.ts";
 import { createLogger } from "./log.ts";
+import { createMetrics, createMetricsServer } from "./metrics.ts";
 import { createCacheServer, type PipelineDeps } from "./pipeline.ts";
 import { closeAllPools } from "./proxy.ts";
 
@@ -33,13 +34,15 @@ async function main(): Promise<void> {
   let deps: PipelineDeps;
   try {
     const config = await loadConfig(configPath);
+    const store = new MemoryStore(config.cache.max_size_mb * MB);
     deps = {
       config,
-      store: new MemoryStore(config.cache.max_size_mb * MB),
+      store,
       compiledOrigins: new Map<string, CompiledRule[]>(
         config.origins.map((o) => [o.host.toLowerCase(), compileRules(o.rules)]),
       ),
       logger: createLogger(config.logging),
+      metrics: createMetrics({ store }),
     };
   } catch (err) {
     if (err instanceof ConfigError) {
@@ -67,6 +70,11 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => adminServer.listen(adminPort, adminHost, resolve));
   deps.logger.info({ address: addressOf(adminServer) }, "marengo admin listening");
 
+  const metricsServer = createMetricsServer({ metrics: deps.metrics, logger: deps.logger });
+  const { host: metricsHost, port: metricsPort } = deps.config.listen.metrics;
+  await new Promise<void>((resolve) => metricsServer.listen(metricsPort, metricsHost, resolve));
+  deps.logger.info({ address: addressOf(metricsServer) }, "marengo metrics listening");
+
   // Graceful shutdown: stop accepting new connections, drain pools, exit.
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -75,6 +83,7 @@ async function main(): Promise<void> {
     deps.logger.info({ signal }, "shutting down");
     proxyServer.close();
     adminServer.close();
+    metricsServer.close();
     await closeAllPools();
     process.exit(0);
   };

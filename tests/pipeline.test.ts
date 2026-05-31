@@ -12,6 +12,7 @@ import { compileRules } from "../src/cache/rules.ts";
 import { MemoryStore } from "../src/cache/store.ts";
 import { parseConfig } from "../src/config/load.ts";
 import { createLogger } from "../src/log.ts";
+import { createMetrics } from "../src/metrics.ts";
 import { createCacheServer } from "../src/pipeline.ts";
 import { closeAllPools } from "../src/proxy.ts";
 
@@ -80,13 +81,15 @@ beforeEach(async () => {
     ],
   });
 
+  const store = new MemoryStore(config.cache.max_size_mb * MB);
   const deps = {
     config,
-    store: new MemoryStore(config.cache.max_size_mb * MB),
+    store,
     compiledOrigins: new Map(
       config.origins.map((o) => [o.host.toLowerCase(), compileRules(o.rules)]),
     ),
     logger: silentLogger,
+    metrics: createMetrics({ store }),
   };
 
   proxyServer = createCacheServer(deps);
