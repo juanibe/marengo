@@ -12,6 +12,8 @@
  *         (also runs via `npm run dev -- path/to/config.yaml` in development)
  */
 
+import type { Server } from "node:http";
+import { createAdminServer } from "./admin/server.ts";
 import { type CompiledRule, compileRules } from "./cache/rules.ts";
 import { MemoryStore } from "./cache/store.ts";
 import { ConfigError, loadConfig } from "./config/load.ts";
@@ -48,20 +50,22 @@ async function main(): Promise<void> {
     throw err;
   }
 
-  const server = createCacheServer(deps);
-  const { host, port } = deps.config.listen.proxy;
-
-  await new Promise<void>((resolve) => server.listen(port, host, resolve));
-  const addr = server.address();
-  const bound = typeof addr === "object" && addr ? `${addr.address}:${addr.port}` : String(addr);
+  const proxyServer = createCacheServer(deps);
+  const { host: proxyHost, port: proxyPort } = deps.config.listen.proxy;
+  await new Promise<void>((resolve) => proxyServer.listen(proxyPort, proxyHost, resolve));
   deps.logger.info(
     {
-      address: bound,
+      address: addressOf(proxyServer),
       origins: deps.config.origins.map((o) => o.host),
       cache_max_mb: deps.config.cache.max_size_mb,
     },
-    "marengo listening",
+    "marengo proxy listening",
   );
+
+  const adminServer = createAdminServer({ store: deps.store, logger: deps.logger });
+  const { host: adminHost, port: adminPort } = deps.config.listen.admin;
+  await new Promise<void>((resolve) => adminServer.listen(adminPort, adminHost, resolve));
+  deps.logger.info({ address: addressOf(adminServer) }, "marengo admin listening");
 
   // Graceful shutdown: stop accepting new connections, drain pools, exit.
   let shuttingDown = false;
@@ -69,12 +73,18 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     deps.logger.info({ signal }, "shutting down");
-    server.close();
+    proxyServer.close();
+    adminServer.close();
     await closeAllPools();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+function addressOf(server: Server): string {
+  const addr = server.address();
+  return typeof addr === "object" && addr ? `${addr.address}:${addr.port}` : String(addr);
 }
 
 if (import.meta.main) {
