@@ -47,29 +47,31 @@ export interface ListenAddress {
 export function parseListenAddress(s: string): ListenAddress | null {
   const trimmed = s.trim();
 
-  // IPv6 bracketed:  [::1]:8080
+  // [host]:port  — IPv6 bracketed
   const ipv6 = trimmed.match(/^\[([^\]]+)\]:(\d+)$/);
   if (ipv6) {
     const port = Number(ipv6[2]);
     return validPort(port) ? { host: ipv6[1], port } : null;
   }
-
-  // No host:  :8080  -> bind all interfaces
-  if (trimmed.startsWith(":")) {
-    const port = Number(trimmed.slice(1));
+  // :port  — bind all interfaces (port digits required)
+  const justPort = trimmed.match(/^:(\d+)$/);
+  if (justPort) {
+    const port = Number(justPort[1]);
     return validPort(port) ? { port } : null;
   }
+  // host:port  — host has no colons (use the bracketed form for IPv6)
+  const hostPort = trimmed.match(/^([^:]+):(\d+)$/);
+  if (hostPort) {
+    const port = Number(hostPort[2]);
+    return validPort(port) ? { host: hostPort[1] as string, port } : null;
+  }
 
-  // host:port
-  const idx = trimmed.lastIndexOf(":");
-  if (idx <= 0) return null;
-  const host = trimmed.slice(0, idx);
-  const port = Number(trimmed.slice(idx + 1));
-  return host && validPort(port) ? { host, port } : null;
+  return null;
 }
 
 function validPort(n: number): boolean {
-  return Number.isInteger(n) && n >= 1 && n <= 65535;
+  // 0 is the OS-assigned-port sentinel; tests and some embedded uses rely on it.
+  return Number.isInteger(n) && n >= 0 && n <= 65535;
 }
 
 // ---------------------------------------------------------------------------

@@ -32,16 +32,11 @@ describe("parseListenAddress", () => {
     expect(parseListenAddress("[::1]:9091")).toEqual({ host: "::1", port: 9091 });
   });
 
-  it.each([
-    "",
-    "8080",
-    ":",
-    ":0",
-    ":99999",
-    "host:",
-    "host:abc",
-    "[::1]",
-  ])("rejects %s", (input) => {
+  it("parses :0 as the OS-assigned-port sentinel", () => {
+    expect(parseListenAddress(":0")).toEqual({ port: 0 });
+  });
+
+  it.each(["", "8080", ":", ":99999", "host:", "host:abc", "[::1]"])("rejects %s", (input) => {
     expect(parseListenAddress(input)).toBeNull();
   });
 });
