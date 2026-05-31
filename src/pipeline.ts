@@ -30,6 +30,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { Readable } from "node:stream";
+import type { Logger } from "pino";
 import type { KeyableRequest } from "./cache/key.ts";
 import {
   type CacheableResponse,
@@ -48,6 +49,7 @@ export interface PipelineDeps {
   store: Store;
   /** Pre-compiled per-host rule matchers, keyed by lowercased Host header. */
   compiledOrigins: Map<string, CompiledRule[]>;
+  logger: Logger;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,15 +94,45 @@ export async function handleRequest(
 /** Build an HTTP server whose request handler is the cache pipeline. */
 export function createCacheServer(deps: PipelineDeps): Server {
   return createHttpServer((req, res) => {
+    const start = Date.now();
+    res.on("finish", () => logRequestComplete(deps.logger, req, res, start));
+
     void handleRequest(req, res, deps).catch((err) => {
-      // Structured logging lands in #11; for now stderr is fine.
-      console.error("[marengo] request failed:", err);
+      deps.logger.error(
+        { err, method: req.method, host: req.headers.host, path: req.url },
+        "request failed",
+      );
       if (!res.headersSent) {
         res.writeHead(502, { "content-type": "text/plain" });
       }
       res.end("Bad Gateway\n");
     });
   });
+}
+
+function logRequestComplete(
+  logger: Logger,
+  req: IncomingMessage,
+  res: ServerResponse,
+  startedAt: number,
+): void {
+  const contentLength = res.getHeader("content-length");
+  const bytes =
+    typeof contentLength === "string" || typeof contentLength === "number"
+      ? Number(contentLength)
+      : undefined;
+  logger.info(
+    {
+      method: req.method,
+      host: req.headers.host,
+      path: req.url,
+      status: res.statusCode,
+      cache: res.getHeader("x-cache") ?? "OFF",
+      bytes,
+      duration_ms: Date.now() - startedAt,
+    },
+    "request",
+  );
 }
 
 // ---------------------------------------------------------------------------

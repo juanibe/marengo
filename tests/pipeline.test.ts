@@ -6,12 +6,22 @@ import {
   type Server,
 } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { compileRules } from "../src/cache/rules.ts";
 import { MemoryStore } from "../src/cache/store.ts";
 import { parseConfig } from "../src/config/load.ts";
+import { createLogger } from "../src/log.ts";
 import { createCacheServer } from "../src/pipeline.ts";
 import { closeAllPools } from "../src/proxy.ts";
+
+// pino + sink-destination so test output stays clean regardless of level.
+const logSink = new Writable({
+  write(_chunk: Buffer, _enc: BufferEncoding, cb: () => void) {
+    cb();
+  },
+});
+const silentLogger = createLogger({ level: "error", format: "json" }, logSink);
 
 const MB = 1024 * 1024;
 
@@ -76,6 +86,7 @@ beforeEach(async () => {
     compiledOrigins: new Map(
       config.origins.map((o) => [o.host.toLowerCase(), compileRules(o.rules)]),
     ),
+    logger: silentLogger,
   };
 
   proxyServer = createCacheServer(deps);
